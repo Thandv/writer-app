@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Generated corpus content (Gutenberg downloads, large)
+corpus/gutenberg/
+
+# Test projects (developer scratch)
+test-project/
+test-projects/
+smoke-test/
+
+# Logs
+*.log

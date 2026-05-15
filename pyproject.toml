@@ -1,0 +1,48 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "writer-app"
+version         = "0.1.0"
+description     = "Multi-agent local fantasy novel writer with reader/critic revision loop and AI-tell humanizer."
+readme          = "README.md"
+license         = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors         = [{ name = "writer-app contributors" }]
+keywords        = ["fantasy", "fiction", "ai", "writing", "ollama", "local-llm"]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Artistic Software",
+    "Topic :: Text Processing",
+]
+# Runtime: stdlib only. Optional extras below.
+dependencies = []
+
+[project.optional-dependencies]
+ui   = ["streamlit>=1.30"]
+test = ["pytest>=7"]
+dev  = ["writer-app[ui,test]"]
+
+[project.scripts]
+writer = "writer_app.cli:main"
+
+[project.urls]
+"Documentation" = "https://github.com/Thandv/writer-app/tree/main/docs"
+"Source"        = "https://github.com/Thandv/writer-app"
+"Issues"        = "https://github.com/Thandv/writer-app/issues"
+
+[tool.setuptools.packages.find]
+where   = ["src"]
+include = ["writer_app*"]
+
+[tool.setuptools.package-data]
+"writer_app" = ["_ui/*.py"]

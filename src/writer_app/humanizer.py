@@ -75,7 +75,12 @@ _SHORT_PARALLEL_TRIPLE = re.compile(
     r"(?:She|He|They|It)\s+(?:was|were|had|did)\b[^.!?]{2,40}[.!?]",
     re.IGNORECASE,
 )
-_AS_OPENER = re.compile(r"(?:^|\n)\s*As (?:the|a|an|his|her|their|I|she|he|they)\s+\w+", re.IGNORECASE)
+_AS_OPENER = re.compile(
+    # Sentence-start "As <subject> ..." — matches at start of input, after a
+    # newline, OR after sentence-ending punctuation followed by whitespace.
+    r"(?:^|\n|[.!?]\s+)As (?:the|a|an|his|her|their|I|she|he|they)\s+\w+",
+    re.IGNORECASE,
+)
 _TRIPLE_PARALLEL = re.compile(r"\b(\w+ \w+)[,.]\s+\1[,.]\s+\1", re.IGNORECASE)
 
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'])")

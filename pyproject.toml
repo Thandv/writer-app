@@ -29,8 +29,31 @@ dependencies = []
 
 [project.optional-dependencies]
 ui   = ["streamlit>=1.30"]
-test = ["pytest>=7"]
+test = ["pytest>=7", "pytest-cov>=4", "hypothesis>=6"]
 dev  = ["writer-app[ui,test]"]
+
+[tool.pytest.ini_options]
+addopts    = "-q --strict-markers"
+testpaths  = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["writer_app"]
+omit   = [
+    "*/tests/*",
+    "*/_ui/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+skip_covered = false
 
 [project.scripts]
 writer = "writer_app.cli:main"

@@ -7,6 +7,8 @@
 
 [![CI](https://github.com/Thandv/writer-app/actions/workflows/ci.yml/badge.svg)](https://github.com/Thandv/writer-app/actions/workflows/ci.yml)
 [![Release](https://github.com/Thandv/writer-app/actions/workflows/release.yml/badge.svg)](https://github.com/Thandv/writer-app/actions/workflows/release.yml)
+[![Tests](https://img.shields.io/badge/tests-151_passing-brightgreen)](tests/)
+[![Coverage](https://img.shields.io/badge/coverage-58%25-yellow)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 

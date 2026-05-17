@@ -43,8 +43,35 @@ jobs:
       - name: writer providers
         run: writer providers
 
-      - name: Pytest
-        run: pytest tests -q
+      - name: Pytest with coverage
+        run: |
+          pytest tests \
+            --cov=writer_app \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html
+
+      - name: Coverage summary
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          python -m coverage report --format=total
+          echo "TOTAL_COVERAGE=$(python -m coverage report --format=total)" >> "$GITHUB_ENV"
+
+      - name: Upload coverage XML (Ubuntu / 3.12 only)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 30
+
+      - name: Upload coverage HTML (Ubuntu / 3.12 only)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 30
 
   build-installer:
     name: Build self-extracting installer

@@ -14,9 +14,9 @@ For each role the router decides per-call:
 Any remote failure falls back to local automatically.
 """
 
+import http.client
 import json
 import os
-import sys
 import urllib.error
 import urllib.request
 from typing import Optional
@@ -33,28 +33,84 @@ JUDGE_MODEL = os.environ.get("WRITER_JUDGE_MODEL", "qwen2.5:7b")
 FALLBACK    = "qwen2.5:7b"
 
 
-def _available_models() -> set:
+class OllamaUnreachableError(RuntimeError):
+    """The local Ollama daemon cannot be reached. Callers at the CLI/UI edge
+    report it and stop; library code lets it propagate."""
+
+    def __init__(self, detail: str):
+        super().__init__(
+            f"Cannot reach Ollama at {OLLAMA_BASE}. "
+            f"Run `brew services start ollama`. ({detail})"
+        )
+
+
+class OllamaRequestError(RuntimeError):
+    """Ollama is running but rejected a request (HTTP error, e.g. model not
+    found or out of memory). Judges record it as a judge failure."""
+
+
+class ModelUnavailableError(RuntimeError):
+    """Ollama is up but no usable chat model is pulled."""
+
+    def __init__(self, missing: list[str]):
+        pulls = "  ".join(f"`ollama pull {m}`" for m in missing)
+        super().__init__(
+            f"No usable chat model is pulled in Ollama "
+            f"(missing: {', '.join(missing)}). Run {pulls}."
+        )
+
+
+def _error_body(e: urllib.error.HTTPError) -> str:
+    """First 200 chars of an HTTP error body, or '' if it can't be read."""
+    try:
+        return e.read().decode("utf-8", errors="replace")[:200]
+    except (OSError, http.client.HTTPException):
+        return ""
+
+
+def _available_models() -> set[str]:
+    """Names of the models pulled in Ollama. Raises OllamaUnreachableError
+    when the daemon cannot be reached (an empty set means nothing is pulled)."""
     try:
         with urllib.request.urlopen(TAGS_URL, timeout=5) as r:
             data = json.loads(r.read())
-        return {m["name"] for m in data.get("models", [])}
-    except Exception:
-        return set()
+    except urllib.error.HTTPError as e:
+        raise OllamaRequestError(
+            f"Ollama returned HTTP {e.code} for {TAGS_URL}: {_error_body(e)}") from e
+    except OSError as e:  # URLError, refused connection, timeout
+        raise OllamaUnreachableError(str(getattr(e, "reason", e))) from e
+    except ValueError as e:  # 200 but not JSON: something else is on that port
+        raise OllamaRequestError(
+            f"{TAGS_URL} did not return JSON; is OLLAMA_HOST an Ollama server? ({e})") from e
+    return {m["name"] for m in data.get("models", [])}
+
+
+def _is_chat_model(name: str) -> bool:
+    """Embedding and vision models can't draft or judge prose. Decided by
+    name only: 'embed' anywhere, or a base name ending in 'vl' (qwen2.5vl)."""
+    base = name.split(":")[0].lower()
+    return "embed" not in name.lower() and not base.endswith("vl")
 
 
 def resolve_models() -> tuple[str, str]:
-    """Resolve configured local models against what's actually pulled in Ollama."""
-    available = _available_models()
-    if not available:
-        return DRAFT_MODEL, JUDGE_MODEL
+    """Resolve the configured local models against what's pulled in Ollama.
+
+    Per role, in order: the preferred model; a pulled model of the same
+    family; FALLBACK; otherwise the first usable model in sorted order, so
+    every process makes the same choice. Raises ModelUnavailableError when
+    no usable chat model is pulled."""
+    usable = sorted(m for m in _available_models() if _is_chat_model(m))
+    if not usable:
+        raise ModelUnavailableError(sorted({DRAFT_MODEL, JUDGE_MODEL}))
 
     def pick(preferred: str, fallback: str) -> str:
-        if preferred in available:
+        if preferred in usable:
             return preferred
-        for name in available:
-            if name.split(":")[0] == preferred.split(":")[0]:
+        family = preferred.split(":")[0]
+        for name in usable:
+            if name.split(":")[0] == family:
                 return name
-        return fallback if fallback in available else next(iter(available))
+        return fallback if fallback in usable else usable[0]
 
     return pick(DRAFT_MODEL, FALLBACK), pick(JUDGE_MODEL, FALLBACK)
 
@@ -77,10 +133,11 @@ def chat(messages: list, model: str, tools: list = None,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())["message"]
+    except urllib.error.HTTPError as e:
+        raise OllamaRequestError(
+            f"Ollama returned HTTP {e.code} for model {model}: {_error_body(e)}") from e
     except urllib.error.URLError as e:
-        print(f"\n[LLM] Cannot reach Ollama at {OLLAMA_BASE}. "
-              f"Run `brew services start ollama`.\n  {e}")
-        sys.exit(1)
+        raise OllamaUnreachableError(str(e.reason)) from e
 
 
 def _extract_tool_calls(content: str) -> Optional[list]:

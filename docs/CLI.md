@@ -43,9 +43,15 @@ Run (or resume) the pipeline. Resumable — kill any time and restart.
 | `--local-only` | Disable remote providers for this run (use Ollama only) |
 | `--chapters / --words / --threshold / --max-revisions / --books` | Override the project's config for this run |
 
+Exits 1 if Ollama is unreachable, if no usable local model is pulled, or
+if three chapters in a row can't be scored by any judge (`judge_failed`).
+
 ## `writer status PATH`
 
-Print project summary and per-chapter progress.
+Print project summary and per-chapter progress. Chapter status is one of
+`pending`, `drafting`, `revising`, `done` or `judge_failed`. A
+`judge_failed` chapter shows no score and prints the judge error under it.
+`writer start` re-runs it.
 
 ## `writer config PATH`
 
@@ -85,6 +91,15 @@ Write and print the KDP AI-disclosure answers. Also writes
 
 Show local + remote routing config and reachability. Does not require an
 existing project.
+
+For each local role it prints the model that will be used. If a configured
+default (`WRITER_DRAFT_MODEL` / `WRITER_JUDGE_MODEL`) isn't pulled, it says
+which model is used instead and prints `ollama pull <default>`. `writer start`
+prints the same lines.
+
+Exits 1, with the hint on stderr, when Ollama can't be reached
+(`brew services start ollama`) or when no usable chat model is pulled
+(`ollama pull <model>`). Embedding and vision models don't count as usable.
 
 ## `writer humanize PATH CHAPTER_FILE`
 

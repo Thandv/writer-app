@@ -102,10 +102,11 @@ Continuity, and Humanizer detector all respect remote routing.
 - Setting a remote provider does NOT change KDP's "AI-generated" category.
   The text is still AI-generated regardless of where the AI ran. You still
   disclose. See [PUBLISHING.md](PUBLISHING.md).
-- API keys are stored in your shell environment only; the pipeline never
-  writes them to `STATE.json` or any committed file.
-- The `.env` file used by the Streamlit UI to persist keys is gitignored
-  by default.
+- API keys live in your shell environment. The pipeline never writes them
+  to `STATE.json` or any committed file.
+- If you save keys in the Streamlit UI, they are stored locally in the
+  book folder (`<project>/.env`) with owner-only permissions (0600). That
+  file is the only place outside your shell where they are kept.
 
 ## Troubleshooting
 

@@ -78,6 +78,30 @@ start` skips:
 
 This makes the pipeline trivially resumable — kill it at any time.
 
+Chapter status is one of `pending | drafting | revising | done | judge_failed`.
+A `judge_failed` chapter has no scored draft and no `final.md`. The next
+`writer start` re-runs it from a fresh draft. A book is marked `done` only
+when every chapter is `done`.
+
+### Judge failures
+
+A reader or critic whose JSON call fails, or whose JSON has no numeric
+rubric scores, is recorded as a failure (`judge_failed: true` plus the
+error). An HTTP error from a running Ollama (e.g. out of memory) counts as
+one failed judge. It gets no score and is never
+counted as a 5. Panel averages and the combined score use only the judges
+that answered. If one whole panel fails, the combined score is the other
+panel's average. If every judge fails:
+
+- on the first draft: the chapter is `judge_failed`, with the error in
+  `judge_error` in `STATE.json`. No revision runs.
+- on a later revision: the loop stops and the best scored draft becomes
+  `final.md` with its real score. The error is kept in `judge_error`.
+
+Three `judge_failed` chapters in a row abort `writer start` with exit code 1.
+The count is kept in memory for one run only. An unreachable Ollama is
+not a judge failure: it stops the run at once (exit 1, start hint).
+
 ## Chapter loop
 
 ```
@@ -95,9 +119,12 @@ for each chapter in BOOK_OUTLINE.md:
         reader  = ReaderPanel(text)       # 4 personas, JSON output
         critic  = CriticPanel(text, beats) # 3 personas, JSON output
 
-        combined = weighted_avg(reader, critic)
+        combined = weighted_avg(reader, critic)   # judged reports only
 
         save_artifacts(vN.md, vN_raw.md, vN_reader.{md,json}, ...)
+
+        if combined is None:              # every judge failed
+            record judge_error; break
 
         if combined > best.score:
             best = (text, combined)
@@ -110,7 +137,8 @@ for each chapter in BOOK_OUTLINE.md:
         revision_note = build_revision_note(reader, critic)
         iteration += 1
 
-    save best.text → chapter-NN/final.md
+    if no draft was scored: status = judge_failed (no final.md)
+    else: save best.text → chapter-NN/final.md
 ```
 
 ## Output structure

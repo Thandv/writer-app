@@ -32,8 +32,12 @@ if (_REPO_ROOT / "src").exists():
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from writer_app.shared.memory import BookProject, BookState
-from writer_app.shared.llm    import resolve_models
+from writer_app.shared.llm    import (
+    resolve_models, ModelUnavailableError, OllamaRequestError,
+    OllamaUnreachableError,
+)
 from writer_app.shared        import remote as remote_mod
+from writer_app.shared.keys   import load_keys, save_keys
 from writer_app.shared        import corpus as corpus_mod
 from writer_app               import (
     provenance as provenance_mod,
@@ -77,22 +81,11 @@ def _load_project(path: Path) -> BookProject | None:
 
 
 def _save_env_file(project: BookProject, keys: dict):
-    """Persist API keys to .env in the project dir (gitignored)."""
+    """Persist provider settings/API keys to the project's .env (owner-only,
+    0600; see writer_app.shared.keys) and apply them to this process."""
     if not keys:
         return
-    env_path = project.output_dir / ".env"
-    existing = {}
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.split("=", 1)
-                existing[k.strip()] = v.strip().strip('"').strip("'")
-    existing.update({k: v for k, v in keys.items() if v is not None})
-    body = "# writer-app per-project secrets (gitignored)\n"
-    for k, v in existing.items():
-        body += f'{k}="{v}"\n'
-    env_path.write_text(body, encoding="utf-8")
-    # Also push to current process env so the running UI uses them
+    save_keys(project.output_dir, keys)
     for k, v in keys.items():
         if v:
             os.environ[k] = v
@@ -100,15 +93,7 @@ def _save_env_file(project: BookProject, keys: dict):
 
 def _load_env_file(project: BookProject):
     """Hydrate process env from project's .env (called on project load)."""
-    env_path = project.output_dir / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ[k.strip()] = v.strip().strip('"').strip("'")
+    os.environ.update(load_keys(project.output_dir))
 
 
 def _running_state() -> dict:
@@ -162,9 +147,9 @@ with st.sidebar:
         draft_local, judge_local = resolve_models()
         st.markdown(f"- Ollama (local): 🟢")
         st.caption(f"draft: `{draft_local}` · judge: `{judge_local}`")
-    except Exception:
+    except (OllamaUnreachableError, ModelUnavailableError, OllamaRequestError) as e:
         st.markdown("- Ollama (local): 🔴")
-        st.caption("Run `brew services start ollama`")
+        st.caption(str(e))
 
     routing = remote_mod.describe_routing()
     for role in ("draft", "judge"):
@@ -335,10 +320,12 @@ with tab_setup:
     with col_p2:
         groq_key = st.text_input("GROQ_API_KEY", cur_groq, type="password",
             help="Sign up at console.groq.com (no credit card required). "
-                 "Stored in the project's .env (gitignored).")
+                 "Stored locally in the book folder's .env with owner-only "
+                 "permissions (0600).")
         cerebras_key = st.text_input("CEREBRAS_API_KEY", cur_cerebras, type="password",
             help="Sign up at cloud.cerebras.ai (no credit card required). "
-                 "Stored in the project's .env (gitignored).")
+                 "Stored locally in the book folder's .env with owner-only "
+                 "permissions (0600).")
 
     if st.button("Save", type="primary"):
         project.author_name       = author.strip()
@@ -359,8 +346,12 @@ with tab_setup:
         if cerebras_key: env_updates["CEREBRAS_API_KEY"] = cerebras_key
         env_updates["WRITER_DRAFT_PROVIDER"] = draft_provider
         env_updates["WRITER_JUDGE_PROVIDER"] = judge_provider
-        _save_env_file(project, env_updates)
-        st.success("Saved.")
+        try:
+            _save_env_file(project, env_updates)
+        except ValueError as e:
+            st.error(f"API keys not saved: {e}")
+        else:
+            st.success("Saved.")
 
 
 # ── Tab: Bible ───────────────────────────────────────────────────────────
@@ -450,6 +441,9 @@ with tab_write:
                 log_path = project.output_dir / "pipeline.log"
                 log_f = open(log_path, "a", buffering=1)
                 env = os.environ.copy()
+                # Unbuffered, so stdout progress and the stderr error line land
+                # in the log in the order they happen.
+                env["PYTHONUNBUFFERED"] = "1"
                 run["process"] = subprocess.Popen(
                     cmd, stdout=log_f, stderr=subprocess.STDOUT, env=env,
                 )
@@ -465,7 +459,12 @@ with tab_write:
             if rc == 0:
                 st.success("Pipeline finished successfully.")
             else:
-                st.warning(f"Pipeline exited with code {rc}. Check the log below.")
+                # The CLI prints the reason (e.g. the Ollama start hint) as its
+                # last log lines before exiting non-zero; surface it here.
+                log_file = project.output_dir / "pipeline.log"
+                log_tail = (log_file.read_text(encoding="utf-8", errors="ignore")
+                            .strip().splitlines()[-3:] if log_file.exists() else [])
+                st.error(f"Pipeline exited with code {rc}:\n\n" + "\n\n".join(log_tail))
 
     # Live log tail
     log_path = project.output_dir / "pipeline.log"
@@ -495,7 +494,9 @@ with tab_write:
                 "Title":     ch.get("title", ""),
                 "Status":    ch["status"],
                 "Iters":     ch.get("iterations", 0),
-                "Score":     f"{ch.get('score', 0):.2f}",
+                "Score":     ("—" if ch["status"] == "judge_failed"
+                              else f"{ch.get('score', 0):.2f}"),
+                "Judge error": ch.get("judge_error", ""),
                 "AI before": f"{ch.get('ai_score_before', 0):.1f}",
                 "AI after":  f"{ch.get('ai_score_after', 0):.1f}",
                 "User rev":  "yes" if ch.get("user_revised") else "",
@@ -567,16 +568,21 @@ with tab_chapters:
                          help="Runs the AI-tell detector + rewriter on the current text. "
                               "Results are written to a side file you can review."):
                 with st.spinner("Humanizing …"):
-                    project.draft_model, project.judge_model = resolve_models()
-                    result = humanizer_mod.run(
-                        project, edited,
-                        max_passes=project.humanizer_max_passes,
-                        ai_score_target=project.humanizer_target,
-                    )
-                    out = ch_dir / "humanized_preview.md"
-                    out.write_text(result["text"], encoding="utf-8")
-                    st.success(f"AI-score: {result['ai_score_before']} → {result['ai_score_after']} "
-                               f"after {result['passes']} pass(es). Saved to {out.name}.")
+                    try:
+                        project.draft_model, project.judge_model = resolve_models()
+                        result = humanizer_mod.run(
+                            project, edited,
+                            max_passes=project.humanizer_max_passes,
+                            ai_score_target=project.humanizer_target,
+                        )
+                    except (OllamaUnreachableError, ModelUnavailableError,
+                            OllamaRequestError) as e:
+                        st.error(str(e))
+                    else:
+                        out = ch_dir / "humanized_preview.md"
+                        out.write_text(result["text"], encoding="utf-8")
+                        st.success(f"AI-score: {result['ai_score_before']} → {result['ai_score_after']} "
+                                   f"after {result['passes']} pass(es). Saved to {out.name}.")
 
     with col_reports:
         # Determine which iteration the chosen version corresponds to

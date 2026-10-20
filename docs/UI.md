@@ -52,8 +52,12 @@ Every field has a hint below it explaining what it does. The fields:
 | Draft provider | local / groq / cerebras — where prose generation runs |
 | Judge provider | local / groq / cerebras — where scoring runs (local is usually right) |
 
-"Save" persists everything to `STATE.json` and `.env` (the API keys stay
-local — never committed to git, the project's `.gitignore` excludes `.env`).
+"Save" persists the settings to `STATE.json`. The provider choices and API
+keys go to `.env`, stored locally in the book folder (`<project>/.env`) with owner-only
+permissions (0600). The file
+is written atomically and is never readable by other users. Opening a
+project tightens an older `.env` to 0600. The book folder is not a git
+repo, so don't copy `.env` anywhere public.
 
 ### Tab: Bible
 
@@ -119,6 +123,8 @@ reading any documentation:
   link to the active provider's ToS.
 - The Write tab shows a banner if remote routing is enabled, naming the
   provider that will receive manuscript text.
-- When you save API keys via the Setup tab, the UI writes them to a local
-  `.env` in the project dir (which is gitignored). Keys are never sent
-  anywhere except to the providers themselves at call time.
+- When you save API keys via the Setup tab, the UI writes them to
+  `.env` in the project dir, stored locally in the book folder (`<project>/.env`) with owner-only
+  permissions (0600).
+  Keys are never sent anywhere except to the providers themselves at call
+  time.

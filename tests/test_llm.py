@@ -8,6 +8,7 @@ The Ollama HTTP call is mocked. We verify:
 """
 
 import json
+import urllib.error
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -178,11 +179,12 @@ def test_generate_json_uses_remote_first(monkeypatch):
 
 # ── resolve_models() ──────────────────────────────────────────────────────
 
-def test_resolve_models_returns_two_strings(monkeypatch):
-    """When Ollama is unreachable, resolve_models returns the configured defaults."""
+def test_resolve_models_raises_when_nothing_is_pulled(monkeypatch):
+    """An empty model list means Ollama is up with nothing pulled: fail loudly
+    with the pull hint instead of returning names that aren't installed."""
     monkeypatch.setattr(llm_mod, "_available_models", lambda: set())
-    draft, judge = llm_mod.resolve_models()
-    assert isinstance(draft, str) and isinstance(judge, str)
+    with pytest.raises(llm_mod.ModelUnavailableError, match="ollama pull"):
+        llm_mod.resolve_models()
 
 
 def test_resolve_models_picks_exact_match(monkeypatch):
@@ -236,3 +238,72 @@ def test_extract_tool_calls_returns_none_when_no_calls():
     assert llm_mod._extract_tool_calls("just prose, no calls") is None
     assert llm_mod._extract_tool_calls("") is None
     assert llm_mod._extract_tool_calls(None) is None
+
+
+# ── Ollama unreachable ────────────────────────────────────────────────────
+
+def test_chat_raises_typed_error_when_ollama_unreachable(monkeypatch):
+    """A connection failure raises OllamaUnreachableError (not SystemExit)
+    and the message carries the start hint."""
+    def refuse(*a, **k):
+        raise urllib.error.URLError("Connection refused")
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", refuse)
+    with pytest.raises(llm_mod.OllamaUnreachableError) as exc:
+        llm_mod.chat([{"role": "user", "content": "hi"}], model="m")
+    assert "brew services start ollama" in str(exc.value)
+    assert "Connection refused" in str(exc.value)
+
+
+def test_chat_http_error_is_a_request_error_not_unreachable(monkeypatch):
+    """Ollama is up but rejects the call (e.g. out of memory): no start hint."""
+    import io
+
+    def http_500(*a, **k):
+        raise urllib.error.HTTPError(llm_mod.CHAT_URL, 500, "err", {},
+                                     io.BytesIO(b"model requires more system memory"))
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", http_500)
+    with pytest.raises(llm_mod.OllamaRequestError) as exc:
+        llm_mod.chat([{"role": "user", "content": "hi"}], model="m")
+    assert "HTTP 500" in str(exc.value)
+    assert "more system memory" in str(exc.value)
+    assert "brew services" not in str(exc.value)
+
+
+def test_chat_http_error_with_unreadable_body_still_typed(monkeypatch):
+    import http.client
+
+    class Broken(urllib.error.HTTPError):
+        def read(self, *a):
+            raise http.client.IncompleteRead(b"")
+    def http_500(*a, **k):
+        raise Broken(llm_mod.CHAT_URL, 500, "err", {}, None)
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", http_500)
+    with pytest.raises(llm_mod.OllamaRequestError, match="HTTP 500"):
+        llm_mod.chat([{"role": "user", "content": "hi"}], model="m")
+
+
+def test_tags_http_error_is_a_request_error_not_unreachable(monkeypatch):
+    import io
+
+    def http_500(*a, **k):
+        raise urllib.error.HTTPError(llm_mod.TAGS_URL, 500, "err", {}, io.BytesIO(b"boom"))
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", http_500)
+    with pytest.raises(llm_mod.OllamaRequestError, match="HTTP 500"):
+        llm_mod.resolve_models()
+
+
+def test_tags_non_json_body_is_a_request_error(monkeypatch):
+    """Something other than Ollama answers on OLLAMA_HOST: a typed error the
+    CLI/UI edges report, not a raw JSONDecodeError traceback."""
+    import io
+
+    class Body(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen",
+                        lambda *a, **k: Body(b"<html>not ollama</html>"))
+    with pytest.raises(llm_mod.OllamaRequestError, match="did not return JSON"):
+        llm_mod.resolve_models()

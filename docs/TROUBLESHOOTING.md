@@ -16,7 +16,17 @@ python3 -m writer_app.cli --help
 
 ## `Cannot reach Ollama`
 
-Ollama is not running.
+Ollama is not running. Any `writer` command that needs the local model
+stops with exit code 1 and prints this to stderr:
+
+```
+writer: Cannot reach Ollama at http://localhost:11434. Run `brew services start ollama`. (...)
+```
+
+The run stops at the first failed call. Chapters are never scored as if
+the judges had answered. In the UI, the Write tab shows the same message
+in red when the pipeline exits. Progress up to that point is in
+`STATE.json`, so `writer start` resumes once Ollama is back.
 
 ```bash
 # macOS
@@ -35,6 +45,29 @@ Override the endpoint if it's elsewhere:
 ```bash
 export OLLAMA_HOST=http://192.168.1.10:11434
 ```
+
+## `Ollama returned HTTP 500 for model ...`
+
+Ollama is running but rejected the call, usually because the model doesn't
+fit in memory or isn't pulled. For a judge it counts as one failed judge.
+For drafting it stops the run with exit code 1. Pull a smaller model or
+free memory, then `writer start` again.
+
+## `No usable chat model is pulled in Ollama`
+
+Ollama is running but has no model that can draft or judge prose. Embedding
+models (`*embed*`) and vision models (`*vl`) don't count. Pull the defaults:
+
+```bash
+ollama pull mistral-nemo:12b
+ollama pull qwen2.5:7b
+```
+
+If a default isn't pulled but other chat models are, `writer start` and
+`writer providers` name the model used instead (e.g.
+`(mistral-nemo:12b is not pulled; using qwen2.5-coder:14b. To use it: ollama pull mistral-nemo:12b)`).
+It's the first pulled chat model in alphabetical order, which may be a code
+model. Pull the default or set `WRITER_DRAFT_MODEL` / `WRITER_JUDGE_MODEL`.
 
 ## `Corpus directory not found`
 
@@ -159,12 +192,19 @@ writer export ~/books/my-series   # will now use pandoc automatically
 Use the `.docx` from the export. KDP supports DOCX, EPUB, and KPF. Avoid
 uploading the raw `MANUSCRIPT.md`.
 
-## Pipeline finished but a chapter has score 0
+## A chapter shows `judge_failed`
 
-The reader/critic JSON parsing failed three times in a row for that
-chapter. The draft is still saved as `final.md` so nothing is lost — but
-the score doesn't reflect quality. Look at the chapter's `vN_reader.md`
-and `vN_critic.md` files to read the (text-rendered) feedback.
+No reader or critic returned valid JSON for that chapter's first draft.
+Usually the judge model is too small or the remote judge provider is
+failing. Nothing is scored as a placeholder 5. The chapter has no
+`final.md`, and `writer status` prints the error. Fix the judge (see "Model
+did not return valid JSON" above), then run `writer start` again; it
+re-drafts the chapter. Three `judge_failed` chapters in a row stop the run
+with exit code 1.
+
+If the judges fail on a later revision instead, the best scored draft is
+kept as `final.md` with its real score. The error is still recorded in
+`judge_error` in `STATE.json`.
 
 ## "I want to start over from chapter 5"
 
@@ -180,7 +220,8 @@ writer start ~/books/my-series
 ## "Where did the API key/manuscript go?"
 
 API keys: only in your shell environment, plus the project's `.env` file
-if you saved them via the UI (gitignored).
+if you saved them via the UI. That file is stored locally in the book
+folder with owner-only permissions (0600).
 
 Manuscript: `~/books/<slug>/book-NN/MANUSCRIPT.md`. Nothing is uploaded
 anywhere unless you've explicitly set `WRITER_*_PROVIDER` to a remote

@@ -11,7 +11,7 @@ KDP's disclosure category — the text is still AI-generated.
 
 import re
 from collections import Counter
-from .shared.llm import generate, generate_json
+from .shared.llm import generate, generate_json, OllamaUnreachableError
 from .shared.memory import BookProject
 
 
@@ -252,6 +252,8 @@ def _llm_detect(text: str, judge_model: str) -> dict:
             model=judge_model, role="judge",
             temperature=0.3, num_ctx=16384,
         )
+    except OllamaUnreachableError:
+        raise
     except Exception as e:
         return {"tells": [], "ai_score": 5, "summary": f"(detector error: {e})"}
     return data

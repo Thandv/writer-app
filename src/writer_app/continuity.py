@@ -7,7 +7,7 @@ drift, magic-rule violations, timeline contradictions, and unpaid promises.
 
 import re
 from pathlib import Path
-from .shared.llm import generate_json
+from .shared.llm import generate_json, OllamaUnreachableError
 from .shared.memory import BookProject
 
 
@@ -74,6 +74,8 @@ FULL MANUSCRIPT (Book {book_n}):
     try:
         data = generate_json(SYSTEM, user, model=project.judge_model, role="judge",
                              temperature=0.2, num_ctx=32768)
+    except OllamaUnreachableError:
+        raise
     except Exception as e:
         print(f"  [Continuity] Could not parse continuity report: {e}")
         data = {"issues": [], "overall_grade": 0, "summary": str(e)}

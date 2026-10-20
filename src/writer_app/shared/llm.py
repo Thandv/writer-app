@@ -14,6 +14,7 @@ For each role the router decides per-call:
 Any remote failure falls back to local automatically.
 """
 
+import http.client
 import json
 import os
 import urllib.error
@@ -59,12 +60,23 @@ class ModelUnavailableError(RuntimeError):
         )
 
 
+def _error_body(e: urllib.error.HTTPError) -> str:
+    """First 200 chars of an HTTP error body, or '' if it can't be read."""
+    try:
+        return e.read().decode("utf-8", errors="replace")[:200]
+    except (OSError, http.client.HTTPException):
+        return ""
+
+
 def _available_models() -> set[str]:
     """Names of the models pulled in Ollama. Raises OllamaUnreachableError
     when the daemon cannot be reached (an empty set means nothing is pulled)."""
     try:
         with urllib.request.urlopen(TAGS_URL, timeout=5) as r:
             data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise OllamaRequestError(
+            f"Ollama returned HTTP {e.code} for {TAGS_URL}: {_error_body(e)}") from e
     except OSError as e:  # URLError, refused connection, timeout
         raise OllamaUnreachableError(str(getattr(e, "reason", e))) from e
     return {m["name"] for m in data.get("models", [])}
@@ -119,9 +131,8 @@ def chat(messages: list, model: str, tools: list = None,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())["message"]
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:200]
         raise OllamaRequestError(
-            f"Ollama returned HTTP {e.code} for model {model}: {body}") from e
+            f"Ollama returned HTTP {e.code} for model {model}: {_error_body(e)}") from e
     except urllib.error.URLError as e:
         raise OllamaUnreachableError(str(e.reason)) from e
 

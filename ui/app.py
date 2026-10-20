@@ -346,8 +346,12 @@ with tab_setup:
         if cerebras_key: env_updates["CEREBRAS_API_KEY"] = cerebras_key
         env_updates["WRITER_DRAFT_PROVIDER"] = draft_provider
         env_updates["WRITER_JUDGE_PROVIDER"] = judge_provider
-        _save_env_file(project, env_updates)
-        st.success("Saved.")
+        try:
+            _save_env_file(project, env_updates)
+        except ValueError as e:
+            st.error(f"API keys not saved: {e}")
+        else:
+            st.success("Saved.")
 
 
 # ── Tab: Bible ───────────────────────────────────────────────────────────

@@ -315,7 +315,7 @@ def cmd_providers(args):
     local_error = None
     try:
         _print_resolved_models("    ")
-    except (ModelUnavailableError, OllamaUnreachableError) as e:
+    except (ModelUnavailableError, OllamaUnreachableError, OllamaRequestError) as e:
         local_error = e
         print(f"    {e}")
     print()

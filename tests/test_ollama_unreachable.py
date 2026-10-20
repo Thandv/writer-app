@@ -76,3 +76,24 @@ def test_writer_start_exits_1_with_hint_when_ollama_down(
 
     assert exc.value.code == 1
     assert HINT in capsys.readouterr().err
+
+
+def test_writer_start_exits_1_when_ollama_rejects_a_draft_call(
+        monkeypatch, project, tmp_path, capsys):
+    """An HTTP error from a running Ollama outside the judges (here: the
+    Loremaster's first call) stops the run with exit 1 and the HTTP error."""
+    def rejected(*a, **k):
+        raise llm_mod.OllamaRequestError("Ollama returned HTTP 500 for model m: oom")
+    monkeypatch.setattr(llm_mod, "_available_models", lambda: {"stub-model:1b"})
+    monkeypatch.setattr(llm_mod, "chat", rejected)
+    monkeypatch.setattr(remote_mod, "internet_available", lambda: False)
+    monkeypatch.setattr(corpus_mod, "CORPUS_DIR", tmp_path / "corpus")
+    for var in ("WRITER_DRAFT_PROVIDER", "WRITER_JUDGE_PROVIDER"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(sys, "argv", ["writer", "start", str(project.output_dir)])
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 1
+    assert "writer: Ollama returned HTTP 500" in capsys.readouterr().err

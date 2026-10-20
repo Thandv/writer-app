@@ -267,3 +267,26 @@ def test_chat_http_error_is_a_request_error_not_unreachable(monkeypatch):
     assert "HTTP 500" in str(exc.value)
     assert "more system memory" in str(exc.value)
     assert "brew services" not in str(exc.value)
+
+
+def test_chat_http_error_with_unreadable_body_still_typed(monkeypatch):
+    import http.client
+
+    class Broken(urllib.error.HTTPError):
+        def read(self, *a):
+            raise http.client.IncompleteRead(b"")
+    def http_500(*a, **k):
+        raise Broken(llm_mod.CHAT_URL, 500, "err", {}, None)
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", http_500)
+    with pytest.raises(llm_mod.OllamaRequestError, match="HTTP 500"):
+        llm_mod.chat([{"role": "user", "content": "hi"}], model="m")
+
+
+def test_tags_http_error_is_a_request_error_not_unreachable(monkeypatch):
+    import io
+
+    def http_500(*a, **k):
+        raise urllib.error.HTTPError(llm_mod.TAGS_URL, 500, "err", {}, io.BytesIO(b"boom"))
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", http_500)
+    with pytest.raises(llm_mod.OllamaRequestError, match="HTTP 500"):
+        llm_mod.resolve_models()

@@ -58,6 +58,7 @@ def test_load_without_file_returns_empty(tmp_path):
 
 @pytest.mark.parametrize("bad", [
     {"GROQ_API_KEY": 'gsk"dummy'},
+    {"GROQ_API_KEY": "gsk'dummy"},
     {"GROQ_API_KEY": "gsk_dummy\nEVIL=1"},
     {"lower-case": "x"},
 ])

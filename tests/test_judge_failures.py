@@ -121,15 +121,20 @@ def test_json_without_numeric_scores_is_a_judge_failure(monkeypatch, tmp_path, p
                for r in result["reports"])
 
 
-def test_ollama_http_error_is_one_failed_judge_not_an_abort(monkeypatch, tmp_path):
+@pytest.mark.parametrize("panel,args,judged", [
+    (reader_panel, ("An invented chapter.",), 3),
+    (critic_panel, ("An invented chapter.", "beat"), 2),
+])
+def test_ollama_http_error_is_one_failed_judge_not_an_abort(monkeypatch, tmp_path,
+                                                            panel, args, judged):
     def behaviour(i):
         if i == 0:
             raise llm_mod.OllamaRequestError("Ollama returned HTTP 500 for model m")
         return _scores_json(6)
     _judges(monkeypatch, behaviour)
-    reader = reader_panel.run(_project(tmp_path), "An invented chapter.")
-    assert (reader["judged"], reader["failed"]) == (3, 1)
-    assert reader["average_score"] == 6.0
+    result = panel.run(_project(tmp_path), *args)
+    assert (result["judged"], result["failed"]) == (judged, 1)
+    assert result["average_score"] == 6.0
 
 
 def test_combined_keeps_critic_reader_weights_when_both_scored():

@@ -79,6 +79,9 @@ def _available_models() -> set[str]:
             f"Ollama returned HTTP {e.code} for {TAGS_URL}: {_error_body(e)}") from e
     except OSError as e:  # URLError, refused connection, timeout
         raise OllamaUnreachableError(str(getattr(e, "reason", e))) from e
+    except ValueError as e:  # 200 but not JSON: something else is on that port
+        raise OllamaRequestError(
+            f"{TAGS_URL} did not return JSON; is OLLAMA_HOST an Ollama server? ({e})") from e
     return {m["name"] for m in data.get("models", [])}
 
 

@@ -290,3 +290,20 @@ def test_tags_http_error_is_a_request_error_not_unreachable(monkeypatch):
     monkeypatch.setattr(llm_mod.urllib.request, "urlopen", http_500)
     with pytest.raises(llm_mod.OllamaRequestError, match="HTTP 500"):
         llm_mod.resolve_models()
+
+
+def test_tags_non_json_body_is_a_request_error(monkeypatch):
+    """Something other than Ollama answers on OLLAMA_HOST: a typed error the
+    CLI/UI edges report, not a raw JSONDecodeError traceback."""
+    import io
+
+    class Body(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen",
+                        lambda *a, **k: Body(b"<html>not ollama</html>"))
+    with pytest.raises(llm_mod.OllamaRequestError, match="did not return JSON"):
+        llm_mod.resolve_models()

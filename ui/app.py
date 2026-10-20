@@ -147,7 +147,7 @@ with st.sidebar:
         draft_local, judge_local = resolve_models()
         st.markdown(f"- Ollama (local): 🟢")
         st.caption(f"draft: `{draft_local}` · judge: `{judge_local}`")
-    except (OllamaUnreachableError, ModelUnavailableError) as e:
+    except (OllamaUnreachableError, ModelUnavailableError, OllamaRequestError) as e:
         st.markdown("- Ollama (local): 🔴")
         st.caption(str(e))
 

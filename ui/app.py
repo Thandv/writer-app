@@ -36,6 +36,7 @@ from writer_app.shared.llm    import (
     resolve_models, ModelUnavailableError, OllamaUnreachableError,
 )
 from writer_app.shared        import remote as remote_mod
+from writer_app.shared.keys   import load_keys, save_keys
 from writer_app.shared        import corpus as corpus_mod
 from writer_app               import (
     provenance as provenance_mod,
@@ -79,22 +80,11 @@ def _load_project(path: Path) -> BookProject | None:
 
 
 def _save_env_file(project: BookProject, keys: dict):
-    """Persist API keys to .env in the project dir (gitignored)."""
+    """Persist provider settings/API keys to the project's .env (owner-only,
+    0600; see writer_app.shared.keys) and apply them to this process."""
     if not keys:
         return
-    env_path = project.output_dir / ".env"
-    existing = {}
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.split("=", 1)
-                existing[k.strip()] = v.strip().strip('"').strip("'")
-    existing.update({k: v for k, v in keys.items() if v is not None})
-    body = "# writer-app per-project secrets (gitignored)\n"
-    for k, v in existing.items():
-        body += f'{k}="{v}"\n'
-    env_path.write_text(body, encoding="utf-8")
-    # Also push to current process env so the running UI uses them
+    save_keys(project.output_dir, keys)
     for k, v in keys.items():
         if v:
             os.environ[k] = v
@@ -102,15 +92,7 @@ def _save_env_file(project: BookProject, keys: dict):
 
 def _load_env_file(project: BookProject):
     """Hydrate process env from project's .env (called on project load)."""
-    env_path = project.output_dir / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ[k.strip()] = v.strip().strip('"').strip("'")
+    os.environ.update(load_keys(project.output_dir))
 
 
 def _running_state() -> dict:
@@ -337,10 +319,12 @@ with tab_setup:
     with col_p2:
         groq_key = st.text_input("GROQ_API_KEY", cur_groq, type="password",
             help="Sign up at console.groq.com (no credit card required). "
-                 "Stored in the project's .env (gitignored).")
+                 "Stored locally in the book folder's .env with owner-only "
+                 "permissions (0600).")
         cerebras_key = st.text_input("CEREBRAS_API_KEY", cur_cerebras, type="password",
             help="Sign up at cloud.cerebras.ai (no credit card required). "
-                 "Stored in the project's .env (gitignored).")
+                 "Stored locally in the book folder's .env with owner-only "
+                 "permissions (0600).")
 
     if st.button("Save", type="primary"):
         project.author_name       = author.strip()

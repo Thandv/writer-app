@@ -213,7 +213,8 @@ writer start ~/books/my-series
 ## "Where did the API key/manuscript go?"
 
 API keys: only in your shell environment, plus the project's `.env` file
-if you saved them via the UI (gitignored).
+if you saved them via the UI. That file is stored locally in the book
+folder with owner-only permissions (0600).
 
 Manuscript: `~/books/<slug>/book-NN/MANUSCRIPT.md`. Nothing is uploaded
 anywhere unless you've explicitly set `WRITER_*_PROVIDER` to a remote

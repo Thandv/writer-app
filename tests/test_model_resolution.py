@@ -41,7 +41,7 @@ def _installed(monkeypatch, names):
 def test_same_choice_in_20_processes_with_different_hash_seeds():
     script = textwrap.dedent(f"""
         from writer_app.shared import llm
-        llm._available_models = lambda: {sorted(INSTALLED)!r}
+        llm._available_models = lambda: set({sorted(INSTALLED)!r})
         print(llm.resolve_models())
     """)
     env = {k: v for k, v in os.environ.items()
@@ -64,6 +64,11 @@ def test_embedding_and_vision_models_never_chosen_even_when_sorted_first(monkeyp
 def test_pulled_preferred_model_beats_sorted_pick(monkeypatch):
     _installed(monkeypatch, INSTALLED | {"mistral-nemo:12b"})
     assert llm_mod.resolve_models() == ("mistral-nemo:12b", "lfm2.5:8b-a1b")
+
+
+def test_exact_preferred_beats_same_family_model_that_sorts_first(monkeypatch):
+    _installed(monkeypatch, {"qwen2.5:14b", "qwen2.5:7b"})
+    assert llm_mod.resolve_models()[1] == "qwen2.5:7b"
 
 
 def test_only_embedding_or_vision_models_raises_with_pull_hint(monkeypatch):

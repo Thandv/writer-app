@@ -33,7 +33,8 @@ if (_REPO_ROOT / "src").exists():
 
 from writer_app.shared.memory import BookProject, BookState
 from writer_app.shared.llm    import (
-    resolve_models, ModelUnavailableError, OllamaUnreachableError,
+    resolve_models, ModelUnavailableError, OllamaRequestError,
+    OllamaUnreachableError,
 )
 from writer_app.shared        import remote as remote_mod
 from writer_app.shared.keys   import load_keys, save_keys
@@ -436,6 +437,9 @@ with tab_write:
                 log_path = project.output_dir / "pipeline.log"
                 log_f = open(log_path, "a", buffering=1)
                 env = os.environ.copy()
+                # Unbuffered, so stdout progress and the stderr error line land
+                # in the log in the order they happen.
+                env["PYTHONUNBUFFERED"] = "1"
                 run["process"] = subprocess.Popen(
                     cmd, stdout=log_f, stderr=subprocess.STDOUT, env=env,
                 )
@@ -453,8 +457,9 @@ with tab_write:
             else:
                 # The CLI prints the reason (e.g. the Ollama start hint) as its
                 # last log lines before exiting non-zero; surface it here.
-                log_tail = (project.output_dir / "pipeline.log").read_text(
-                    encoding="utf-8", errors="ignore").strip().splitlines()[-3:]
+                log_file = project.output_dir / "pipeline.log"
+                log_tail = (log_file.read_text(encoding="utf-8", errors="ignore")
+                            .strip().splitlines()[-3:] if log_file.exists() else [])
                 st.error(f"Pipeline exited with code {rc}:\n\n" + "\n\n".join(log_tail))
 
     # Live log tail
@@ -566,7 +571,8 @@ with tab_chapters:
                             max_passes=project.humanizer_max_passes,
                             ai_score_target=project.humanizer_target,
                         )
-                    except (OllamaUnreachableError, ModelUnavailableError) as e:
+                    except (OllamaUnreachableError, ModelUnavailableError,
+                            OllamaRequestError) as e:
                         st.error(str(e))
                     else:
                         out = ch_dir / "humanized_preview.md"

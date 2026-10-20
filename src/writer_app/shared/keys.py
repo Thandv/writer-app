@@ -19,10 +19,10 @@ _HEADER = "# writer-app per-project settings and API keys (owner-only, 0600)\n"
 _NAME_RE = re.compile(r"[A-Z_][A-Z0-9_]*")
 
 
-def _validate(name: str, value: str):
+def _validate(name: str, value: str) -> None:
     if not _NAME_RE.fullmatch(name):
         raise ValueError(f"invalid key name {name!r}")
-    if any(c in value for c in '"\r\n'):
+    if any(c in value for c in "\"'\r\n"):
         raise ValueError(f"value for {name} contains a quote or line break")
 
 

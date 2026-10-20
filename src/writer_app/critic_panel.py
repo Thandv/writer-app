@@ -67,6 +67,10 @@ The chapter:
     try:
         data = generate_json(sys, user, model=judge_model, role="judge",
                              temperature=0.4, num_ctx=16384)
+        scores = data.get("scores", {})
+        weighted = weighted_average(scores, CRITIC_RUBRIC)
+        if not weighted:  # scores are clamped to >= 1, so 0.0 means none were numeric
+            raise ValueError("judge returned no numeric rubric scores")
     except OllamaUnreachableError:
         raise
     except Exception as e:
@@ -76,13 +80,12 @@ The chapter:
             "judge_failed": True,
             "error":        str(e),
         }
-    scores = data.get("scores", {})
     return {
         "persona_id":   persona["id"],
         "persona_name": persona["name"],
         "judge_failed": False,
         "scores":     scores,
-        "weighted":   weighted_average(scores, CRITIC_RUBRIC),
+        "weighted":   weighted,
         "strengths":  data.get("strengths", []),
         "weaknesses": data.get("weaknesses", []),
         "line_notes": data.get("line_notes", []),

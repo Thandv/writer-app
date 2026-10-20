@@ -43,6 +43,11 @@ class OllamaUnreachableError(RuntimeError):
         )
 
 
+class OllamaRequestError(RuntimeError):
+    """Ollama is running but rejected a request (HTTP error, e.g. model not
+    found or out of memory). Judges record it as a judge failure."""
+
+
 class ModelUnavailableError(RuntimeError):
     """Ollama is up but no usable chat model is pulled."""
 
@@ -113,6 +118,10 @@ def chat(messages: list, model: str, tools: list = None,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())["message"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:200]
+        raise OllamaRequestError(
+            f"Ollama returned HTTP {e.code} for model {model}: {body}") from e
     except urllib.error.URLError as e:
         raise OllamaUnreachableError(str(e.reason)) from e
 

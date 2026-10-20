@@ -85,8 +85,10 @@ when every chapter is `done`.
 
 ### Judge failures
 
-A reader or critic whose JSON call fails is recorded as a failure
-(`judge_failed: true` plus the error). It gets no score and is never
+A reader or critic whose JSON call fails, or whose JSON has no numeric
+rubric scores, is recorded as a failure (`judge_failed: true` plus the
+error). An HTTP error from a running Ollama (e.g. out of memory) counts as
+one failed judge. It gets no score and is never
 counted as a 5. Panel averages and the combined score use only the judges
 that answered. If one whole panel fails, the combined score is the other
 panel's average. If every judge fails:

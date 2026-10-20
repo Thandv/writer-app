@@ -97,11 +97,39 @@ def test_mixed_results_average_only_successful_judges(monkeypatch, tmp_path):
     critic = critic_panel.run(project, "An invented chapter.", "beat")
     assert reader["average_score"] == 8.0
     assert (reader["judged"], reader["failed"]) == (1, 3)
+    assert reader["keep_reading_pct"] == 100      # over judged readers only
     assert critic["average_score"] is None
     # One whole panel failed: combined is the other panel's average.
     assert orchestrator._combined_score(reader, critic) == 8.0
     note = critic_panel.build_revision_note(reader, critic)
     assert "valid JSON" not in note
+    assert "## Specific weaknesses\n\n" in note   # no entries from failed critics
+    md = reader_panel.render_markdown(reader)
+    assert "Judges that failed (not counted)" in md and "valid JSON" in md
+
+
+@pytest.mark.parametrize("panel,args", [
+    (reader_panel, ("An invented chapter.",)),
+    (critic_panel, ("An invented chapter.", "beat")),
+])
+@pytest.mark.parametrize("reply", [{"verdict": "fine"}, {"scores": {"pacing": "eight"}}])
+def test_json_without_numeric_scores_is_a_judge_failure(monkeypatch, tmp_path, panel, args, reply):
+    _judges(monkeypatch, lambda i: reply)
+    result = panel.run(_project(tmp_path), *args)
+    assert result["average_score"] is None
+    assert all(r["judge_failed"] and "no numeric rubric scores" in r["error"]
+               for r in result["reports"])
+
+
+def test_ollama_http_error_is_one_failed_judge_not_an_abort(monkeypatch, tmp_path):
+    def behaviour(i):
+        if i == 0:
+            raise llm_mod.OllamaRequestError("Ollama returned HTTP 500 for model m")
+        return _scores_json(6)
+    _judges(monkeypatch, behaviour)
+    reader = reader_panel.run(_project(tmp_path), "An invented chapter.")
+    assert (reader["judged"], reader["failed"]) == (3, 1)
+    assert reader["average_score"] == 6.0
 
 
 def test_combined_keeps_critic_reader_weights_when_both_scored():
@@ -162,6 +190,37 @@ def test_streak_does_not_carry_over_between_runs(tmp_path, monkeypatch, mocked_p
     orchestrator.run(_project(tmp_path, chapters=2))          # 2 failures
     orchestrator.run(BookProject.load(tmp_path))              # 2 more, no abort
     assert [c["status"] for c in _chapters(tmp_path)] == ["judge_failed"] * 2
+
+
+def test_successful_chapter_resets_the_streak(tmp_path, monkeypatch, mocked_pipeline):
+    # Chapters 1-2 fail, 3 succeeds, 4-5 fail: never 3 in a row, no abort.
+    per_chapter = ["fail", "fail", "ok", "fail", "fail"]
+    calls = {"n": 0}
+
+    def behaviour(i):
+        chapter = calls["n"] // JUDGE_CALLS_PER_ITERATION
+        calls["n"] += 1
+        if per_chapter[chapter] == "fail":
+            _always_fail(i)
+        return _scores_json(9)
+    _judges(monkeypatch, behaviour)
+    orchestrator.run(_project(tmp_path, chapters=5))
+    assert [c["status"] for c in _chapters(tmp_path)] == [
+        "judge_failed", "judge_failed", "done", "judge_failed", "judge_failed"]
+
+
+def test_judge_failed_chapter_drops_a_stale_score(tmp_path, monkeypatch, mocked_pipeline):
+    orchestrator.run(_project(tmp_path))                     # stub panels: 8.5
+    # "Start over from a chapter" (TROUBLESHOOTING): delete it, mark it pending.
+    (tmp_path / "book-01" / "chapter-01" / "final.md").unlink()
+    state = json.loads((tmp_path / "STATE.json").read_text())
+    state["books"][0]["status"] = "writing"
+    state["books"][0]["chapters"][0]["status"] = "pending"
+    (tmp_path / "STATE.json").write_text(json.dumps(state))
+    _judges(monkeypatch, _always_fail)
+    orchestrator.run(BookProject.load(tmp_path))
+    [ch] = _chapters(tmp_path)
+    assert ch["status"] == "judge_failed" and ch["score"] == 0.0
 
 
 def test_three_consecutive_judge_failures_make_writer_start_exit_1(

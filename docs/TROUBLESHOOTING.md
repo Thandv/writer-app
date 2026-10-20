@@ -46,6 +46,13 @@ Override the endpoint if it's elsewhere:
 export OLLAMA_HOST=http://192.168.1.10:11434
 ```
 
+## `Ollama returned HTTP 500 for model ...`
+
+Ollama is running but rejected the call, usually because the model doesn't
+fit in memory or isn't pulled. For a judge it counts as one failed judge.
+For drafting it stops the run with exit code 1. Pull a smaller model or
+free memory, then `writer start` again.
+
 ## `No usable chat model is pulled in Ollama`
 
 Ollama is running but has no model that can draft or judge prose. Embedding

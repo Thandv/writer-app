@@ -20,7 +20,8 @@ from pathlib import Path
 from .shared.memory  import BookProject
 from .shared         import llm as llm_mod
 from .shared.llm     import (
-    resolve_models, ModelUnavailableError, OllamaUnreachableError,
+    resolve_models, ModelUnavailableError, OllamaRequestError,
+    OllamaUnreachableError,
 )
 from .shared         import corpus as corpus_mod
 from .shared         import remote as remote_mod
@@ -493,7 +494,7 @@ def main():
     args = parser.parse_args()
     try:
         args.func(args)
-    except (OllamaUnreachableError, ModelUnavailableError) as e:
+    except (OllamaUnreachableError, ModelUnavailableError, OllamaRequestError) as e:
         print(f"writer: {e}", file=sys.stderr)
         sys.exit(1)
 

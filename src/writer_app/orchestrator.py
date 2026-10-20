@@ -43,7 +43,7 @@ class _JudgeFailureStreak:
     """Consecutive judge_failed chapters in this run only (never persisted)."""
     count: int = 0
 
-    def record(self, state: ChapterState):
+    def record(self, state: ChapterState) -> None:
         self.count = self.count + 1 if state.status == "judge_failed" else 0
         if self.count >= MAX_CONSECUTIVE_JUDGE_FAILURES:
             raise JudgeFailureAbort(
@@ -214,6 +214,7 @@ def _run_chapter(project: BookProject, book_n: int, chapter: dict) -> ChapterSta
     if best_score < 0:
         # No draft was ever scored: record the failure, write no final.md.
         state.status = "judge_failed"
+        state.score = 0.0
         book.upsert_chapter(state)
         project.upsert_book(book)
         project.save()

@@ -17,8 +17,10 @@ class ChapterState:
     title:      str = ""
     iterations: int = 0              # how many draft+revise passes done
     score:      float = 0.0          # last weighted average rubric score
-    status:     str = "pending"      # pending | drafting | revising | done
+    status:     str = "pending"      # pending | drafting | revising | done | judge_failed
     final_path: str = ""             # path to final chapter file
+    judge_error: str = ""            # why the judges failed (judge_failed, or a later
+                                     # revision that no judge could score)
 
     # Humanizer telemetry (most recent pass)
     humanizer_passes:    int   = 0

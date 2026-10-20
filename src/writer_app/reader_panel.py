@@ -8,6 +8,7 @@ scores plus free-text reactions.
 from .shared.llm import generate_json, OllamaUnreachableError
 from .shared.rubric import (
     READER_RUBRIC, READER_PERSONAS, weighted_average, rubric_block,
+    judged_average, judged_reports, failed_judges_note,
 )
 from .shared.memory import BookProject
 
@@ -61,17 +62,14 @@ def _score_with_persona(persona: dict, chapter_text: str, judge_model: str) -> d
         return {
             "persona_id":   persona["id"],
             "persona_name": persona["name"],
-            "scores": {k: 5 for k in READER_RUBRIC},
-            "weighted": 5.0,
-            "would_keep_reading": False,
-            "landed": "",
-            "missed": f"(reader did not return valid feedback: {e})",
-            "verdict": "(error)",
+            "judge_failed": True,
+            "error":        str(e),
         }
     scores = data.get("scores", {})
     return {
         "persona_id":   persona["id"],
         "persona_name": persona["name"],
+        "judge_failed": False,
         "scores":   scores,
         "weighted": weighted_average(scores, READER_RUBRIC),
         "would_keep_reading": bool(data.get("would_keep_reading", False)),
@@ -86,28 +84,41 @@ def run(project: BookProject, chapter_text: str) -> dict:
     reports = []
     for persona in READER_PERSONAS:
         rep = _score_with_persona(persona, chapter_text, project.judge_model)
-        weighted = rep["weighted"]
-        keep = "→ keeps reading" if rep["would_keep_reading"] else "→ DNF"
-        print(f"    [{persona['name']:8s}] {weighted:.2f}  {keep}")
+        if rep["judge_failed"]:
+            print(f"    [{persona['name']:8s}] judge failed: {rep['error'][:120]}")
+        else:
+            keep = "→ keeps reading" if rep["would_keep_reading"] else "→ DNF"
+            print(f"    [{persona['name']:8s}] {rep['weighted']:.2f}  {keep}")
         reports.append(rep)
 
-    if reports:
-        avg = round(sum(r["weighted"] for r in reports) / len(reports), 2)
-    else:
-        avg = 0.0
-    keep_pct = round(
-        100 * sum(1 for r in reports if r["would_keep_reading"]) / max(1, len(reports)),
+    judged = judged_reports(reports)
+    avg = judged_average(reports)
+    keep_pct = (
+        round(100 * sum(1 for r in judged if r["would_keep_reading"]) / len(judged))
+        if judged else None
     )
-    print(f"  [Reader Panel] Average weighted score: {avg}  ({keep_pct}% would keep reading)")
-    return {"reports": reports, "average_score": avg, "keep_reading_pct": keep_pct}
+    failed = len(reports) - len(judged)
+    if avg is None:
+        print("  [Reader Panel] judge failed: no reader returned valid feedback")
+    else:
+        print(f"  [Reader Panel] Average weighted score: {avg}  ({keep_pct}% would keep "
+              f"reading; {len(judged)} judged, {failed} failed)")
+    return {"reports": reports, "average_score": avg, "keep_reading_pct": keep_pct,
+            "judged": len(judged), "failed": failed}
 
 
 def render_markdown(panel_result: dict) -> str:
     out = ["# Reader Panel Report", ""]
-    out.append(f"**Average weighted score:** {panel_result['average_score']}  ")
-    out.append(f"**Would keep reading:** {panel_result['keep_reading_pct']}%")
+    if panel_result["average_score"] is None:
+        out.append("**Judge failed:** no reader returned valid feedback.")
+    else:
+        out.append(f"**Average weighted score:** {panel_result['average_score']}  ")
+        out.append(f"**Would keep reading:** {panel_result['keep_reading_pct']}%")
     out.append("")
-    for r in panel_result["reports"]:
+    note = failed_judges_note(panel_result["reports"])
+    if note:
+        out += [note, ""]
+    for r in judged_reports(panel_result["reports"]):
         out.append(f"## {r['persona_name']}  (weighted {r['weighted']})")
         scores = r.get("scores", {})
         for k in READER_RUBRIC:

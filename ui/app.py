@@ -501,7 +501,9 @@ with tab_write:
                 "Title":     ch.get("title", ""),
                 "Status":    ch["status"],
                 "Iters":     ch.get("iterations", 0),
-                "Score":     f"{ch.get('score', 0):.2f}",
+                "Score":     ("—" if ch["status"] == "judge_failed"
+                              else f"{ch.get('score', 0):.2f}"),
+                "Judge error": ch.get("judge_error", ""),
                 "AI before": f"{ch.get('ai_score_before', 0):.1f}",
                 "AI after":  f"{ch.get('ai_score_after', 0):.1f}",
                 "User rev":  "yes" if ch.get("user_revised") else "",

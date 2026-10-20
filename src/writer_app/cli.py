@@ -200,7 +200,11 @@ def cmd_start(args):
         corpus_mod.build_craft_notes()
         print("Skipping Gutenberg download. Run `writer corpus` later to add it.")
 
-    orchestrator.run(project)
+    try:
+        orchestrator.run(project)
+    except orchestrator.JudgeFailureAbort as e:
+        print(f"writer: {e}", file=sys.stderr)
+        sys.exit(1)
     print(project.summary())
 
 
@@ -221,8 +225,10 @@ def cmd_status(args):
             continue
         for ch in sorted(b["chapters"], key=lambda c: c["number"]):
             score = f"{ch['score']:.2f}" if ch.get("score") else "  —  "
-            print(f"  Ch {ch['number']:02d}  [{ch['status']:8s}]  score {score}  "
+            print(f"  Ch {ch['number']:02d}  [{ch['status']:12s}]  score {score}  "
                   f"iters {ch.get('iterations',0)}  {ch.get('title','')}")
+            if ch.get("judge_error"):
+                print(f"         judge failed: {ch['judge_error']}")
 
 
 # ── config ────────────────────────────────────────────────────────────────

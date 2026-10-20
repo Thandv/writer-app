@@ -9,6 +9,8 @@ The threshold for "good enough to move on" lives on BookProject.min_chapter_scor
 the threshold or hits BookProject.max_revisions_per_chapter.
 """
 
+from typing import Optional
+
 # ── Critic panel: structural rubric, scored 1-10 each ────────────────────
 CRITIC_RUBRIC = {
     "prose_quality":      {"weight": 1.5, "desc": "Sentence-level craft: imagery, rhythm, word choice, variety."},
@@ -119,3 +121,24 @@ def rubric_block(rubric: dict) -> str:
     for cat, meta in rubric.items():
         lines.append(f"- **{cat}** (1-10): {meta['desc']}")
     return "\n".join(lines)
+
+
+def judged_reports(reports: list[dict]) -> list[dict]:
+    """The reports whose judge returned usable feedback."""
+    return [r for r in reports if not r.get("judge_failed")]
+
+
+def judged_average(reports: list[dict]) -> Optional[float]:
+    """Mean weighted score over judged reports; None when every judge failed."""
+    ok = judged_reports(reports)
+    return round(sum(r["weighted"] for r in ok) / len(ok), 2) if ok else None
+
+
+def failed_judges_note(reports: list[dict]) -> str:
+    """One markdown line naming the judges that failed, or '' if none did."""
+    failed = [r for r in reports if r.get("judge_failed")]
+    if not failed:
+        return ""
+    return "**Judges that failed (not counted):** " + "; ".join(
+        f"{r['persona_name']} ({r['error']})" for r in failed)
+

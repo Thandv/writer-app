@@ -18,16 +18,56 @@ Stages:
 
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from .shared.memory  import BookProject, ChapterState
 from .shared         import llm
-from .shared.rubric  import CRITIC_RUBRIC, READER_RUBRIC, weighted_average
 from . import (
     loremaster, plotter, drafter, reader_panel, critic_panel,
     reviser, continuity, humanizer, provenance,
 )
+
+
+MAX_CONSECUTIVE_JUDGE_FAILURES = 3
+
+
+class JudgeFailureAbort(RuntimeError):
+    """Too many chapters in a row could not be scored by any judge."""
+
+
+@dataclass
+class _JudgeFailureStreak:
+    """Consecutive judge_failed chapters in this run only (never persisted)."""
+    count: int = 0
+
+    def record(self, state: ChapterState):
+        self.count = self.count + 1 if state.status == "judge_failed" else 0
+        if self.count >= MAX_CONSECUTIVE_JUDGE_FAILURES:
+            raise JudgeFailureAbort(
+                f"{self.count} chapters in a row could not be scored by any judge "
+                f"(last error: {state.judge_error}). Stopping the run; fix the judge "
+                f"model or provider, then `writer start` resumes."
+            )
+
+
+def _combined_score(reader_result: dict, critic_result: dict) -> Optional[float]:
+    """Critic 1.0 / reader 0.9 weighted mean over the panels that have a score.
+    None when neither panel had a judge succeed."""
+    weighted = [(w, r["average_score"])
+                for w, r in ((1.0, critic_result), (0.9, reader_result))
+                if r["average_score"] is not None]
+    if not weighted:
+        return None
+    return round(sum(w * avg for w, avg in weighted) / sum(w for w, _ in weighted), 2)
+
+
+def _judge_error(reader_result: dict, critic_result: dict) -> str:
+    errors = [r["error"] for r in reader_result["reports"] + critic_result["reports"]
+              if r.get("judge_failed")]
+    return errors[0] if errors else "no judge returned a score"
 
 
 def _header(title: str):
@@ -93,6 +133,7 @@ def _run_chapter(project: BookProject, book_n: int, chapter: dict) -> ChapterSta
         print(f"  [Ch {n:02d}] already finalised — skipping.")
         return state
 
+    state.judge_error = ""
     prev_text = _previous_chapter_text(project, book_n, n)
     threshold = project.min_chapter_score
     max_iters = project.max_revisions_per_chapter
@@ -139,15 +180,17 @@ def _run_chapter(project: BookProject, book_n: int, chapter: dict) -> ChapterSta
         reader_result = reader_panel.run(project, chapter_text)
         critic_result = critic_panel.run(project, chapter_text, beat_body)
 
-        combined = round(
-            (1.0 * critic_result["average_score"] + 0.9 * reader_result["average_score"])
-            / 1.9, 2,
-        )
+        combined = _combined_score(reader_result, critic_result)
 
         _save_chapter_artifacts(
             ch_dir, iteration, chapter_text, reader_result, critic_result,
             humanize_result=humanize_result, pre_humanize_text=raw_draft,
         )
+        if combined is None:
+            state.judge_error = _judge_error(reader_result, critic_result)
+            print(f"  [Ch {n:02d}] v{iteration}: judge failed — every reader and critic "
+                  f"failed ({state.judge_error[:160]}). Stopping this chapter's revise loop.")
+            break
         ai_after = humanize_result["ai_score_after"] if humanize_result else None
         ai_str = f"  ai={ai_after}" if ai_after is not None else ""
         print(f"  [Ch {n:02d}] v{iteration}: combined score {combined}  "
@@ -167,6 +210,14 @@ def _run_chapter(project: BookProject, book_n: int, chapter: dict) -> ChapterSta
             break
 
         revision_note = critic_panel.build_revision_note(reader_result, critic_result)
+
+    if best_score < 0:
+        # No draft was ever scored: record the failure, write no final.md.
+        state.status = "judge_failed"
+        book.upsert_chapter(state)
+        project.upsert_book(book)
+        project.save()
+        return state
 
     final_path.write_text(best_text, encoding="utf-8")
     state.status = "done"
@@ -211,7 +262,9 @@ def _assemble_manuscript(project: BookProject, book_n: int):
     print(f"  Assembled → {out}{rev_note}")
 
 
-def _run_book(project: BookProject, book_n: int) -> BookProject:
+def _run_book(project: BookProject, book_n: int,
+              streak: Optional[_JudgeFailureStreak] = None) -> BookProject:
+    streak = streak if streak is not None else _JudgeFailureStreak()
     _header(f"Book {book_n:02d} — Plotting")
     plotter.run_book(project, book_n)
 
@@ -237,8 +290,9 @@ def _run_book(project: BookProject, book_n: int) -> BookProject:
         if st.status == "done":
             continue
         t0 = time.time()
-        _run_chapter(project, book_n, ch)
-        print(f"  [Ch {ch['number']:02d}] done in {(time.time()-t0)/60:.1f}m\n")
+        ch_state = _run_chapter(project, book_n, ch)
+        print(f"  [Ch {ch['number']:02d}] {ch_state.status} in {(time.time()-t0)/60:.1f}m\n")
+        streak.record(ch_state)
         book = project.book(book_n)
 
     _header(f"Book {book_n:02d} — Continuity Pass")
@@ -251,7 +305,12 @@ def _run_book(project: BookProject, book_n: int) -> BookProject:
     _assemble_manuscript(project, book_n)
 
     book = project.book(book_n)
-    book.status = "done"
+    unfinished = [c["number"] for c in book.chapters if c["status"] != "done"]
+    if unfinished:
+        print(f"  [Book {book_n:02d}] not done — chapters {unfinished} have no scored "
+              f"final draft. `writer start` re-runs them.")
+    else:
+        book.status = "done"
     project.upsert_book(book)
     project.save()
     return project
@@ -281,13 +340,16 @@ def run(project: BookProject) -> BookProject:
 
     project.save()
 
+    streak = _JudgeFailureStreak()
     for book_n in range(1, project.target_books_in_series + 1):
         b = project.book(book_n)
         if b.status == "done":
             print(f"\n[Book {book_n:02d}] already done — skipping.")
             continue
-        _run_book(project, book_n)
+        _run_book(project, book_n, streak)
 
-    project.stage = "done"
+    if all(project.book(n).status == "done"
+           for n in range(1, project.target_books_in_series + 1)):
+        project.stage = "done"
     project.save()
     return project

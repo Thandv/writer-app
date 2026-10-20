@@ -43,9 +43,15 @@ Run (or resume) the pipeline. Resumable — kill any time and restart.
 | `--local-only` | Disable remote providers for this run (use Ollama only) |
 | `--chapters / --words / --threshold / --max-revisions / --books` | Override the project's config for this run |
 
+Exits 1 if Ollama is unreachable, if no usable local model is pulled, or
+if three chapters in a row can't be scored by any judge (`judge_failed`).
+
 ## `writer status PATH`
 
-Print project summary and per-chapter progress.
+Print project summary and per-chapter progress. Chapter status is one of
+`pending`, `drafting`, `revising`, `done` or `judge_failed`. A
+`judge_failed` chapter shows no score and prints the judge error under it.
+`writer start` re-runs it.
 
 ## `writer config PATH`
 

@@ -185,12 +185,19 @@ writer export ~/books/my-series   # will now use pandoc automatically
 Use the `.docx` from the export. KDP supports DOCX, EPUB, and KPF. Avoid
 uploading the raw `MANUSCRIPT.md`.
 
-## Pipeline finished but a chapter has score 0
+## A chapter shows `judge_failed`
 
-The reader/critic JSON parsing failed three times in a row for that
-chapter. The draft is still saved as `final.md` so nothing is lost — but
-the score doesn't reflect quality. Look at the chapter's `vN_reader.md`
-and `vN_critic.md` files to read the (text-rendered) feedback.
+No reader or critic returned valid JSON for that chapter's first draft.
+Usually the judge model is too small or the remote judge provider is
+failing. Nothing is scored as a placeholder 5. The chapter has no
+`final.md`, and `writer status` prints the error. Fix the judge (see "Model
+did not return valid JSON" above), then run `writer start` again; it
+re-drafts the chapter. Three `judge_failed` chapters in a row stop the run
+with exit code 1.
+
+If the judges fail on a later revision instead, the best scored draft is
+kept as `final.md` with its real score. The error is still recorded in
+`judge_error` in `STATE.json`.
 
 ## "I want to start over from chapter 5"
 

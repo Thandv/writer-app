@@ -5,7 +5,7 @@ Three simulated critics review each chapter at the craft level and return
 rubric scores plus structured critiques.
 """
 
-from .shared.llm import generate_json
+from .shared.llm import generate_json, OllamaUnreachableError
 from .shared.rubric import (
     CRITIC_RUBRIC, CRITIC_PERSONAS, weighted_average, rubric_block,
 )
@@ -66,6 +66,8 @@ The chapter:
     try:
         data = generate_json(sys, user, model=judge_model, role="judge",
                              temperature=0.4, num_ctx=16384)
+    except OllamaUnreachableError:
+        raise
     except Exception as e:
         return {
             "persona_id":   persona["id"],

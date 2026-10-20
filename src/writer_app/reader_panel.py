@@ -5,7 +5,7 @@ Four simulated reader personas read each chapter and produce numeric rubric
 scores plus free-text reactions.
 """
 
-from .shared.llm import generate_json
+from .shared.llm import generate_json, OllamaUnreachableError
 from .shared.rubric import (
     READER_RUBRIC, READER_PERSONAS, weighted_average, rubric_block,
 )
@@ -55,6 +55,8 @@ def _score_with_persona(persona: dict, chapter_text: str, judge_model: str) -> d
     try:
         data = generate_json(sys, user, model=judge_model, role="judge",
                              temperature=0.5, num_ctx=16384)
+    except OllamaUnreachableError:
+        raise
     except Exception as e:
         return {
             "persona_id":   persona["id"],

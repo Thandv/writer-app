@@ -16,7 +16,17 @@ python3 -m writer_app.cli --help
 
 ## `Cannot reach Ollama`
 
-Ollama is not running.
+Ollama is not running. Any `writer` command that needs the local model
+stops with exit code 1 and prints this to stderr:
+
+```
+writer: Cannot reach Ollama at http://localhost:11434. Run `brew services start ollama`. (...)
+```
+
+The run stops at the first failed call. Chapters are never scored as if
+the judges had answered. In the UI, the Write tab shows the same message
+in red when the pipeline exits. Progress up to that point is in
+`STATE.json`, so `writer start` resumes once Ollama is back.
 
 ```bash
 # macOS

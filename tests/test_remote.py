@@ -235,3 +235,28 @@ def test_chat_raises_when_offline(monkeypatch):
            "tos_url": "", "privacy_url": ""}
     with pytest.raises(RemoteUnavailable, match="no internet"):
         chat([{"role": "user", "content": "hi"}], provider_cfg=cfg)
+
+
+# ── Remote → local fallback with local Ollama down ──────────────────────
+
+def test_remote_failure_falls_back_to_local_then_raises_when_local_down(monkeypatch):
+    """Remote failure falls through to local Ollama; if local is also down,
+    OllamaUnreachableError propagates instead of the process exiting."""
+    from writer_app.shared import llm as llm_mod
+
+    monkeypatch.setenv("WRITER_DRAFT_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "dummy-key")
+    remote_calls = []
+
+    def remote_down(*a, **k):
+        remote_calls.append(1)
+        raise RemoteUnavailable("network: down")
+    monkeypatch.setattr(remote_mod, "chat", remote_down)
+
+    def local_down(*a, **k):
+        raise urllib.error.URLError("Connection refused")
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", local_down)
+
+    with pytest.raises(llm_mod.OllamaUnreachableError):
+        llm_mod.generate("sys", "user", model="m", role="draft")
+    assert remote_calls == [1]

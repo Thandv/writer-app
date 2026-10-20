@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from .shared.memory  import BookProject
-from .shared.llm     import resolve_models
+from .shared.llm     import resolve_models, OllamaUnreachableError
 from .shared         import corpus as corpus_mod
 from .shared         import remote as remote_mod
 from . import provenance as provenance_mod
@@ -468,7 +468,11 @@ def main():
     p_ui.set_defaults(func=cmd_ui)
 
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except OllamaUnreachableError as e:
+        print(f"writer: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

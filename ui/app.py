@@ -465,7 +465,11 @@ with tab_write:
             if rc == 0:
                 st.success("Pipeline finished successfully.")
             else:
-                st.warning(f"Pipeline exited with code {rc}. Check the log below.")
+                # The CLI prints the reason (e.g. the Ollama start hint) as its
+                # last log lines before exiting non-zero; surface it here.
+                log_tail = (project.output_dir / "pipeline.log").read_text(
+                    encoding="utf-8", errors="ignore").strip().splitlines()[-3:]
+                st.error(f"Pipeline exited with code {rc}:\n\n" + "\n\n".join(log_tail))
 
     # Live log tail
     log_path = project.output_dir / "pipeline.log"

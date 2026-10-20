@@ -8,6 +8,7 @@ The Ollama HTTP call is mocked. We verify:
 """
 
 import json
+import urllib.error
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -236,3 +237,17 @@ def test_extract_tool_calls_returns_none_when_no_calls():
     assert llm_mod._extract_tool_calls("just prose, no calls") is None
     assert llm_mod._extract_tool_calls("") is None
     assert llm_mod._extract_tool_calls(None) is None
+
+
+# ── Ollama unreachable ────────────────────────────────────────────────────
+
+def test_chat_raises_typed_error_when_ollama_unreachable(monkeypatch):
+    """A connection failure raises OllamaUnreachableError (not SystemExit)
+    and the message carries the start hint."""
+    def refuse(*a, **k):
+        raise urllib.error.URLError("Connection refused")
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", refuse)
+    with pytest.raises(llm_mod.OllamaUnreachableError) as exc:
+        llm_mod.chat([{"role": "user", "content": "hi"}], model="m")
+    assert "brew services start ollama" in str(exc.value)
+    assert "Connection refused" in str(exc.value)

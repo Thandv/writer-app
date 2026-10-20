@@ -16,7 +16,6 @@ Any remote failure falls back to local automatically.
 
 import json
 import os
-import sys
 import urllib.error
 import urllib.request
 from typing import Optional
@@ -31,6 +30,17 @@ TAGS_URL    = f"{OLLAMA_BASE}/api/tags"
 DRAFT_MODEL = os.environ.get("WRITER_DRAFT_MODEL", "mistral-nemo:12b")
 JUDGE_MODEL = os.environ.get("WRITER_JUDGE_MODEL", "qwen2.5:7b")
 FALLBACK    = "qwen2.5:7b"
+
+
+class OllamaUnreachableError(RuntimeError):
+    """The local Ollama daemon cannot be reached. Callers at the CLI/UI edge
+    report it and stop; library code lets it propagate."""
+
+    def __init__(self, detail: str):
+        super().__init__(
+            f"Cannot reach Ollama at {OLLAMA_BASE}. "
+            f"Run `brew services start ollama`. ({detail})"
+        )
 
 
 def _available_models() -> set:
@@ -78,9 +88,7 @@ def chat(messages: list, model: str, tools: list = None,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())["message"]
     except urllib.error.URLError as e:
-        print(f"\n[LLM] Cannot reach Ollama at {OLLAMA_BASE}. "
-              f"Run `brew services start ollama`.\n  {e}")
-        sys.exit(1)
+        raise OllamaUnreachableError(str(e.reason)) from e
 
 
 def _extract_tool_calls(content: str) -> Optional[list]:

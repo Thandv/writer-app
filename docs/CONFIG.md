@@ -39,7 +39,13 @@ These are not persisted in the project; set them per shell session.
 | `OLLAMA_HOST` | `http://localhost:11434` | Override Ollama endpoint |
 
 If the configured local model isn't pulled, the resolver falls back to the
-closest available family member, then to `qwen2.5:7b`.
+closest pulled family member, then to `qwen2.5:7b`, then to the first pulled
+chat model in alphabetical order. The choice is the same on every run.
+Embedding models (name contains `embed`) and vision models (base name ends
+in `vl`, e.g. `qwen2.5vl:3b`) are never chosen. If no usable model is pulled,
+`writer start` and `writer providers` stop with exit code 1 and print the
+`ollama pull` command for each missing default. `writer start` and
+`writer providers` say when a fallback is in use.
 
 ### Remote provider routing
 

@@ -46,6 +46,22 @@ Override the endpoint if it's elsewhere:
 export OLLAMA_HOST=http://192.168.1.10:11434
 ```
 
+## `No usable chat model is pulled in Ollama`
+
+Ollama is running but has no model that can draft or judge prose. Embedding
+models (`*embed*`) and vision models (`*vl`) don't count. Pull the defaults:
+
+```bash
+ollama pull mistral-nemo:12b
+ollama pull qwen2.5:7b
+```
+
+If a default isn't pulled but other chat models are, `writer start` and
+`writer providers` name the model used instead (e.g.
+`(mistral-nemo:12b is not pulled; using qwen2.5-coder:14b. To use it: ollama pull mistral-nemo:12b)`).
+It's the first pulled chat model in alphabetical order, which may be a code
+model. Pull the default or set `WRITER_DRAFT_MODEL` / `WRITER_JUDGE_MODEL`.
+
 ## `Corpus directory not found`
 
 ```bash

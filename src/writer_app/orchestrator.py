@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .shared.memory  import BookProject, ChapterState
-from .shared.llm     import resolve_models
+from .shared         import llm
 from .shared.rubric  import CRITIC_RUBRIC, READER_RUBRIC, weighted_average
 from . import (
     loremaster, plotter, drafter, reader_panel, critic_panel,
@@ -258,7 +258,7 @@ def _run_book(project: BookProject, book_n: int) -> BookProject:
 
 
 def run(project: BookProject) -> BookProject:
-    draft_model, judge_model = resolve_models()
+    draft_model, judge_model = llm.resolve_models()
     project.draft_model = draft_model
     project.judge_model = judge_model
     print(f"\nLocal models: draft={draft_model}  judge={judge_model}")

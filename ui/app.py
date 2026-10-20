@@ -32,7 +32,9 @@ if (_REPO_ROOT / "src").exists():
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from writer_app.shared.memory import BookProject, BookState
-from writer_app.shared.llm    import resolve_models
+from writer_app.shared.llm    import (
+    resolve_models, ModelUnavailableError, OllamaUnreachableError,
+)
 from writer_app.shared        import remote as remote_mod
 from writer_app.shared        import corpus as corpus_mod
 from writer_app               import (
@@ -162,9 +164,9 @@ with st.sidebar:
         draft_local, judge_local = resolve_models()
         st.markdown(f"- Ollama (local): 🟢")
         st.caption(f"draft: `{draft_local}` · judge: `{judge_local}`")
-    except Exception:
+    except (OllamaUnreachableError, ModelUnavailableError) as e:
         st.markdown("- Ollama (local): 🔴")
-        st.caption("Run `brew services start ollama`")
+        st.caption(str(e))
 
     routing = remote_mod.describe_routing()
     for role in ("draft", "judge"):
@@ -571,16 +573,20 @@ with tab_chapters:
                          help="Runs the AI-tell detector + rewriter on the current text. "
                               "Results are written to a side file you can review."):
                 with st.spinner("Humanizing …"):
-                    project.draft_model, project.judge_model = resolve_models()
-                    result = humanizer_mod.run(
-                        project, edited,
-                        max_passes=project.humanizer_max_passes,
-                        ai_score_target=project.humanizer_target,
-                    )
-                    out = ch_dir / "humanized_preview.md"
-                    out.write_text(result["text"], encoding="utf-8")
-                    st.success(f"AI-score: {result['ai_score_before']} → {result['ai_score_after']} "
-                               f"after {result['passes']} pass(es). Saved to {out.name}.")
+                    try:
+                        project.draft_model, project.judge_model = resolve_models()
+                        result = humanizer_mod.run(
+                            project, edited,
+                            max_passes=project.humanizer_max_passes,
+                            ai_score_target=project.humanizer_target,
+                        )
+                    except (OllamaUnreachableError, ModelUnavailableError) as e:
+                        st.error(str(e))
+                    else:
+                        out = ch_dir / "humanized_preview.md"
+                        out.write_text(result["text"], encoding="utf-8")
+                        st.success(f"AI-score: {result['ai_score_before']} → {result['ai_score_after']} "
+                                   f"after {result['passes']} pass(es). Saved to {out.name}.")
 
     with col_reports:
         # Determine which iteration the chosen version corresponds to

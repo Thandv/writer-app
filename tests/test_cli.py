@@ -168,8 +168,36 @@ def test_disclosure_creates_file_and_prints(tmp_path):
 
 # ── providers ─────────────────────────────────────────────────────────────
 
-def test_providers_no_env_shows_local_for_both(tmp_path):
-    rc, out, err = _writer("providers")
+@pytest.fixture
+def providers_cli(monkeypatch, capsys):
+    """Run `writer providers` in-process with Ollama's model list and the
+    internet probe stubbed, so the result doesn't depend on a live daemon."""
+    from writer_app import cli
+    from writer_app.shared import llm as llm_mod
+    from writer_app.shared import remote as remote_mod
+    monkeypatch.setattr(llm_mod, "_available_models",
+                        lambda: {"mistral-nemo:12b", "qwen2.5:7b"})
+    monkeypatch.setattr(remote_mod, "internet_available", lambda: True)
+    for var in ("WRITER_DRAFT_PROVIDER", "WRITER_JUDGE_PROVIDER",
+                "GROQ_API_KEY", "CEREBRAS_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(sys, "argv", ["writer", "providers"])
+
+    def run(env=None):
+        for k, v in (env or {}).items():
+            monkeypatch.setenv(k, v)
+        try:
+            cli.main()
+            rc = 0
+        except SystemExit as e:
+            rc = e.code
+        captured = capsys.readouterr()
+        return rc, captured.out, captured.err
+    return run
+
+
+def test_providers_no_env_shows_local_for_both(providers_cli):
+    rc, out, err = providers_cli()
     assert rc == 0, err
     # Should mention both roles and say "local" for each
     assert "draft" in out
@@ -177,10 +205,9 @@ def test_providers_no_env_shows_local_for_both(tmp_path):
     assert "local" in out
 
 
-def test_providers_reports_remote_when_env_set(tmp_path):
-    rc, out, err = _writer("providers",
-                            env={"WRITER_DRAFT_PROVIDER": "groq",
-                                 "GROQ_API_KEY": "gsk_fake"})
+def test_providers_reports_remote_when_env_set(providers_cli):
+    rc, out, err = providers_cli(env={"WRITER_DRAFT_PROVIDER": "groq",
+                                      "GROQ_API_KEY": "gsk_fake"})
     assert rc == 0, err
     assert "groq" in out.lower()
     assert "llama" in out.lower()  # default model name

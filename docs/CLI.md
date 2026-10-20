@@ -86,6 +86,15 @@ Write and print the KDP AI-disclosure answers. Also writes
 Show local + remote routing config and reachability. Does not require an
 existing project.
 
+For each local role it prints the model that will be used. If a configured
+default (`WRITER_DRAFT_MODEL` / `WRITER_JUDGE_MODEL`) isn't pulled, it says
+which model is used instead and prints `ollama pull <default>`. `writer start`
+prints the same lines.
+
+Exits 1, with the hint on stderr, when Ollama can't be reached
+(`brew services start ollama`) or when no usable chat model is pulled
+(`ollama pull <model>`). Embedding and vision models don't count as usable.
+
 ## `writer humanize PATH CHAPTER_FILE`
 
 Re-run the humanizer on a single chapter file out-of-band. Useful for

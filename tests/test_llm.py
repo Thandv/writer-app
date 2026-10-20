@@ -179,11 +179,12 @@ def test_generate_json_uses_remote_first(monkeypatch):
 
 # ── resolve_models() ──────────────────────────────────────────────────────
 
-def test_resolve_models_returns_two_strings(monkeypatch):
-    """When Ollama is unreachable, resolve_models returns the configured defaults."""
+def test_resolve_models_raises_when_nothing_is_pulled(monkeypatch):
+    """An empty model list means Ollama is up with nothing pulled: fail loudly
+    with the pull hint instead of returning names that aren't installed."""
     monkeypatch.setattr(llm_mod, "_available_models", lambda: set())
-    draft, judge = llm_mod.resolve_models()
-    assert isinstance(draft, str) and isinstance(judge, str)
+    with pytest.raises(llm_mod.ModelUnavailableError, match="ollama pull"):
+        llm_mod.resolve_models()
 
 
 def test_resolve_models_picks_exact_match(monkeypatch):

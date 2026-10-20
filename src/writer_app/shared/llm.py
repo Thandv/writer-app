@@ -43,28 +43,54 @@ class OllamaUnreachableError(RuntimeError):
         )
 
 
-def _available_models() -> set:
+class ModelUnavailableError(RuntimeError):
+    """Ollama is up but no usable chat model is pulled."""
+
+    def __init__(self, missing: list[str]):
+        pulls = "  ".join(f"`ollama pull {m}`" for m in missing)
+        super().__init__(
+            f"No usable chat model is pulled in Ollama "
+            f"(missing: {', '.join(missing)}). Run {pulls}."
+        )
+
+
+def _available_models() -> set[str]:
+    """Names of the models pulled in Ollama. Raises OllamaUnreachableError
+    when the daemon cannot be reached (an empty set means nothing is pulled)."""
     try:
         with urllib.request.urlopen(TAGS_URL, timeout=5) as r:
             data = json.loads(r.read())
-        return {m["name"] for m in data.get("models", [])}
-    except Exception:
-        return set()
+    except OSError as e:  # URLError, refused connection, timeout
+        raise OllamaUnreachableError(str(getattr(e, "reason", e))) from e
+    return {m["name"] for m in data.get("models", [])}
+
+
+def _is_chat_model(name: str) -> bool:
+    """Embedding and vision models can't draft or judge prose. Decided by
+    name only: 'embed' anywhere, or a base name ending in 'vl' (qwen2.5vl)."""
+    base = name.split(":")[0].lower()
+    return "embed" not in name.lower() and not base.endswith("vl")
 
 
 def resolve_models() -> tuple[str, str]:
-    """Resolve configured local models against what's actually pulled in Ollama."""
-    available = _available_models()
-    if not available:
-        return DRAFT_MODEL, JUDGE_MODEL
+    """Resolve the configured local models against what's pulled in Ollama.
+
+    Per role, in order: the preferred model; a pulled model of the same
+    family; FALLBACK; otherwise the first usable model in sorted order, so
+    every process makes the same choice. Raises ModelUnavailableError when
+    no usable chat model is pulled."""
+    usable = sorted(m for m in _available_models() if _is_chat_model(m))
+    if not usable:
+        raise ModelUnavailableError(sorted({DRAFT_MODEL, JUDGE_MODEL}))
 
     def pick(preferred: str, fallback: str) -> str:
-        if preferred in available:
+        if preferred in usable:
             return preferred
-        for name in available:
-            if name.split(":")[0] == preferred.split(":")[0]:
+        family = preferred.split(":")[0]
+        for name in usable:
+            if name.split(":")[0] == family:
                 return name
-        return fallback if fallback in available else next(iter(available))
+        return fallback if fallback in usable else usable[0]
 
     return pick(DRAFT_MODEL, FALLBACK), pick(JUDGE_MODEL, FALLBACK)
 

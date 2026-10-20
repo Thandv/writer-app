@@ -18,7 +18,10 @@ import sys
 from pathlib import Path
 
 from .shared.memory  import BookProject
-from .shared.llm     import resolve_models, OllamaUnreachableError
+from .shared         import llm as llm_mod
+from .shared.llm     import (
+    resolve_models, ModelUnavailableError, OllamaUnreachableError,
+)
 from .shared         import corpus as corpus_mod
 from .shared         import remote as remote_mod
 from . import provenance as provenance_mod
@@ -116,10 +119,21 @@ def cmd_corpus(args):
 
 # ── start ─────────────────────────────────────────────────────────────────
 
-def _check_models(project: BookProject):
+def _print_resolved_models(indent: str) -> tuple[str, str]:
+    """Resolve and print the local models. When a configured default isn't
+    pulled, say which model is used instead and how to pull the default."""
     draft, judge = resolve_models()
-    print(f"  local  draft : {draft}")
-    print(f"  local  judge : {judge}")
+    for role, configured, resolved in (("draft", llm_mod.DRAFT_MODEL, draft),
+                                       ("judge", llm_mod.JUDGE_MODEL, judge)):
+        print(f"{indent}{role} model: {resolved}")
+        if resolved != configured:
+            print(f"{indent}  ({configured} is not pulled; using {resolved}. "
+                  f"To use it: ollama pull {configured})")
+    return draft, judge
+
+
+def _check_models(project: BookProject):
+    draft, judge = _print_resolved_models("  local  ")
     if draft == judge:
         print("\n  Note: draft and judge local models are the same. For best local prose,")
         print("        pull a 12B-class general model:")
@@ -291,12 +305,12 @@ def cmd_providers(args):
     print(f"  Internet: {'available' if online else 'OFFLINE'}")
     print()
     print("  Local (Ollama):")
+    local_error = None
     try:
-        draft, judge = resolve_models()
-        print(f"    draft model: {draft}")
-        print(f"    judge model: {judge}")
-    except Exception as e:
-        print(f"    (Ollama unreachable: {e})")
+        _print_resolved_models("    ")
+    except (ModelUnavailableError, OllamaUnreachableError) as e:
+        local_error = e
+        print(f"    {e}")
     print()
     print("  Remote routing (per role, from env vars):")
     routing = remote_mod.describe_routing()
@@ -321,6 +335,9 @@ def cmd_providers(args):
     print("    export WRITER_DRAFT_PROVIDER=groq")
     print("    export WRITER_JUDGE_PROVIDER=local")
     print()
+    if local_error is not None:
+        print(f"writer: {local_error}", file=sys.stderr)
+        sys.exit(1)
 
 
 # ── humanize ──────────────────────────────────────────────────────────────
@@ -470,7 +487,7 @@ def main():
     args = parser.parse_args()
     try:
         args.func(args)
-    except OllamaUnreachableError as e:
+    except (OllamaUnreachableError, ModelUnavailableError) as e:
         print(f"writer: {e}", file=sys.stderr)
         sys.exit(1)
 
